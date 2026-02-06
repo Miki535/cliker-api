@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"log"
 	"net/http"
 
@@ -17,15 +16,9 @@ type User struct {
 	Record   int
 }
 
-type ClickerBasicStructure struct {
-	Record   int    `json:"record"`
-	Nickname string `json:"nickname"`
-}
-
-// just for testing before real database
-type TestingGetRequest struct {
-	Names   string `json:"names"`
-	Records int    `json:"records"`
+type DataToPutInDB struct {
+	Username string
+	Record   int
 }
 
 func main() {
@@ -45,28 +38,30 @@ func main() {
 	})
 	// router for put info in "ClickerBasicStructure":) kurwa!
 	router.POST("/postInformation", func(c *gin.Context) {
-		var clickerBaseST ClickerBasicStructure
+		var dataToPut DataToPutInDB
 
-		if err := c.ShouldBindJSON(&clickerBaseST); err != nil {
+		if err := c.ShouldBindJSON(&dataToPut); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "bad JSON request",
 			})
 			return
 		}
+
+		insertUser(db, dataToPut.Username, dataToPut.Record)
+
 		c.JSON(200, gin.H{
-			"status": "All good!",
+			"result:": "all good!",
 		})
 	})
 
 	router.GET("/getDatabase", func(c *gin.Context) {
-		var testingGT TestingGetRequest
-
-		testingGT.Names = "John deer"
-		testingGT.Records = 1785983
+		users, err := selectUsersFromDB(db)
+		if err != nil {
+			log.Fatal("Error while selecting users data from DB: ", err)
+		}
 
 		c.JSON(200, gin.H{
-			"Names: ":   testingGT.Names,
-			"Records: ": testingGT.Records,
+			"Data: ": users,
 		})
 	})
 
@@ -93,44 +88,36 @@ func createTable(db *sql.DB) {
 	log.Println("users table created")
 }
 
-func insertUser(db *sql.DB, username string, age int) {
+func insertUser(db *sql.DB, username string, record int) {
 	insertUserSQL := `INSERT INTO users(username, record) VALUES (?, ?)`
 	statement, err := db.Prepare(insertUserSQL)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
 	defer statement.Close()
-	_, err = statement.Exec(username, age)
+	_, err = statement.Exec(username, record)
 	if err != nil {
 		log.Println("Error insetring user: ", err.Error())
 		return
 	}
 }
 
-func selectUsers(db *sql.DB) {
-	row, err := db.Query("SELECT * FROM users ORDER BY id")
+func selectUsersFromDB(db *sql.DB) ([]User, error) {
+	rows, err := db.Query("SELECT id, username, record FROM users ORDER BY id")
 	if err != nil {
-		log.Fatal("Error while selecting from DB", err)
+		return nil, err
 	}
-	defer row.Close()
+	defer rows.Close()
 
 	var users []User
-	for row.Next() {
-		var user User
 
-		err := row.Scan(&user.ID, &user.Username, &user.Record)
-		if err != nil {
-			log.Fatal("Error while scanning row: ", err)
+	for rows.Next() {
+		var user User
+		if err := rows.Scan(&user.ID, &user.Username, &user.Record); err != nil {
+			return nil, err
 		}
 		users = append(users, user)
 	}
-	err = row.Err()
-	if err != nil {
-		log.Fatal("Error: type 'row.Err()'", err)
-	}
 
-	fmt.Println("Users in db + this is testing lines of code. so chilll:)")
-	for _, user := range users {
-		fmt.Printf("ID: %d, Username: %s, Age: %d\n", user.ID, user.Username, user.Record)
-	}
+	return users, rows.Err()
 }
